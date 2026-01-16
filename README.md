@@ -73,9 +73,6 @@ src/
 docker compose up -d
 docker compose down
 
-# ログ確認
-docker compose logs -f app
-
-# コンテナ内でコマンド実行
+# Seeding
 docker exec car-ai-app pnpm db:seed
 ```
