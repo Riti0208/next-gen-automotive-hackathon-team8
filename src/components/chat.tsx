@@ -29,7 +29,7 @@ export function Chat() {
     try {
       const result = await generateResponse(userMessage);
 
-      if (result.success && result.text) {
+      if (result.success) {
         setMessages((prev) => [
           ...prev,
           { role: "assistant", content: result.text },

@@ -9,9 +9,6 @@ const storage = new PostgresStore({
 
 const memory = new Memory({
   storage,
-  options: {
-    generateTitle: true,
-  },
 });
 
 export const assistantAgent = new Agent({
