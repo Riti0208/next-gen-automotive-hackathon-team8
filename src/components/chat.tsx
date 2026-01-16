@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { generateResponse } from "@/backend/api/actions";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -27,7 +26,15 @@ export function Chat() {
     setIsLoading(true);
 
     try {
-      const result = await generateResponse(userMessage);
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ message: userMessage }),
+      });
+
+      const result = await response.json();
 
       if (result.success) {
         setMessages((prev) => [
