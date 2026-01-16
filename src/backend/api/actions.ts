@@ -1,6 +1,6 @@
 "use server";
 
-import { mastra } from "@/mastra";
+import { mastra } from "@/backend/mastra";
 
 type GenerateResponseResult =
   | { success: true; text: string }

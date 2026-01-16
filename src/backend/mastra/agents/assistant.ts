@@ -1,7 +1,7 @@
 import { Agent } from '@mastra/core';
 import { Memory } from '@mastra/memory';
 import { PostgresStore } from '@mastra/pg';
-import { getRequiredEnv } from '@/lib/env';
+import { getRequiredEnv } from '@/backend/lib/env';
 
 const storage = new PostgresStore({
   connectionString: getRequiredEnv('DATABASE_URL'),
