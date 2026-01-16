@@ -3,6 +3,9 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import { Card } from "@/components/ui/card";
 
+// 動的レンダリングを強制（ビルド時の静的生成をスキップ）
+export const dynamic = "force-dynamic";
+
 async function getDatabaseData() {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
