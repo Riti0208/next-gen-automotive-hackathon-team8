@@ -1,0 +1,34 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# pnpmインストール
+RUN npm install -g pnpm
+
+# 依存関係ファイルをコピー
+COPY package.json pnpm-lock.yaml ./
+
+# 依存関係インストール
+RUN pnpm install
+
+# アプリケーションコードをコピー（ボリュームマウントで上書きされる）
+COPY . .
+
+# Prisma Clientを生成（ビルド時にダミーのDATABASE_URLを設定）
+ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
+RUN pnpm db:generate
+
+# ポート公開
+EXPOSE 3000
+
+# 起動スクリプトを /usr/local/bin に配置（ボリュームマウントの影響を受けない）
+RUN echo '#!/bin/sh' > /usr/local/bin/docker-entrypoint.sh && \
+    echo 'cd /app' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'echo "Running database migrations..."' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'pnpm db:migrate:deploy || echo "No migrations to run"' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'echo "Starting development server..."' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'pnpm dev' >> /usr/local/bin/docker-entrypoint.sh && \
+    chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# 起動スクリプトを実行
+CMD ["docker-entrypoint.sh"]
