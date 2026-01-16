@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { mastra } from "@/backend/mastra";
+import { ChatService } from "@/lib/services/chatService";
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,12 +13,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const agent = mastra.getAgent("assistant");
-    const result = await agent.generate(message);
+    const text = await ChatService.generateResponse(message);
 
     return NextResponse.json({
       success: true,
-      text: result.text,
+      text,
     });
   } catch (error) {
     const errorMessage =
