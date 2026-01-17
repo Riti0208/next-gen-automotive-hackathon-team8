@@ -32,8 +32,8 @@ const SAPPORO_PARKING_LOCATION = {
 
 // 函館IC付近の座標を追加
 const HAKODATE_IC_LOCATION = {
-  lat: 41.8394,
-  lng: 140.7375,
+  lat: 41.832560185908726,
+  lng: 140.7368535315187
 };
 
 // ジャガイモファクトリーの座標 (デモ用固定マーカー)
@@ -72,6 +72,7 @@ export function DriverMap() {
   // 現在地を札幌の駐車場に固定
   const [currentLocation, setCurrentLocation] = useState<Location>(SAPPORO_PARKING_LOCATION);
   const [hasSkipped, setHasSkipped] = useState(false);
+  const [hasRecommended, setHasRecommended] = useState(false);
 
   const [destination, setDestination] = useState<string>("");
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
@@ -478,6 +479,15 @@ export function DriverMap() {
     setCurrentLocation(HAKODATE_IC_LOCATION);
     setHasSkipped(true);
 
+    if (map) {
+      map.panTo(HAKODATE_IC_LOCATION);
+      map.setZoom(15);
+    }
+  }, [map]);
+
+  const recommendPotatoFactory = useCallback(() => {
+    setHasRecommended(true);
+
     // デモ用: ジャガイモファクトリーのピンを自動配置
     const newPin: CustomPin = {
       id: 'potato-factory-demo',
@@ -485,11 +495,6 @@ export function DriverMap() {
       label: 'ジャガイモファクトリー'
     };
     setCustomPins([newPin]);
-
-    if (map) {
-      map.panTo(HAKODATE_IC_LOCATION);
-      map.setZoom(15);
-    }
   }, [map]);
 
   if (loadError) return <div className="p-4 text-destructive">Google Mapsの読み込みに失敗しました</div>;
@@ -744,6 +749,13 @@ export function DriverMap() {
             </Button>
           )}
 
+          {/* テスト用レコメンドボタン: スキップ後かつ未レコメンド時に表示 */}
+          {directions && hasSkipped && !hasRecommended && (
+            <Button size="lg" onClick={recommendPotatoFactory} className="h-14 w-14 rounded-full bg-amber-500 p-0 shadow-xl">
+              <Navigation className="h-6 w-6" />
+            </Button>
+          )}
+
           {customPins.length > 0 && (
             customPinDirections ? (
               <Button size="lg" onClick={clearCustomPinRoute} className="h-14 w-14 rounded-full bg-gray-500 p-0 shadow-xl">
@@ -755,9 +767,6 @@ export function DriverMap() {
               </Button>
             )
           )}
-          <Button size="lg" onClick={() => setIsPinDialogOpen(true)} className="h-14 w-14 rounded-full bg-pink-500 p-0 shadow-xl">
-            <MapPin className="h-6 w-6" />
-          </Button>
         </div>
       </div>
 
