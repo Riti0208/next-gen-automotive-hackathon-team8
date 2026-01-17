@@ -254,8 +254,12 @@ export function DriverMap() {
     setActiveSession(null);
   }, [activeSession, endSession]);
 
-  const addPinFromAddress = useCallback(async () => {
-    if (!pinLocationInput.trim()) {
+  const testAddPinFromAddress = useCallback(async () => {
+    await addPinFromAddress(pinLocationInput);
+  }, [pinLocationInput]);
+
+  const addPinFromAddress = async (address: string) => {
+    if (!address.trim()) {
       setGeocodingError("場所を入力してください");
       return;
     }
@@ -267,7 +271,7 @@ export function DriverMap() {
 
     try {
       const result = await geocoder.geocode({
-        address: pinLocationInput,
+        address: address,
         region: "jp",
       });
 
@@ -283,7 +287,7 @@ export function DriverMap() {
           lat: location.lat(),
           lng: location.lng(),
         },
-        label: pinLocationInput,
+        label: address,
       };
 
       setCustomPins([newPin]);
@@ -295,7 +299,7 @@ export function DriverMap() {
     } finally {
       setIsGeocodingLoading(false);
     }
-  }, [pinLocationInput]);
+  }
 
   const removeCustomPin = useCallback((pinId: string) => {
     setCustomPins((prev) => prev.filter((pin) => pin.id !== pinId));
@@ -546,7 +550,7 @@ export function DriverMap() {
               {geocodingError && <p className="text-sm text-destructive">{geocodingError}</p>}
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setIsPinDialogOpen(false)} className="flex-1">キャンセル</Button>
-                <Button onClick={addPinFromAddress} disabled={!pinLocationInput.trim() || isGeocodingLoading} className="flex-1">
+                <Button onClick={testAddPinFromAddress} disabled={!pinLocationInput.trim() || isGeocodingLoading} className="flex-1">
                   {isGeocodingLoading ? "検索中..." : "ピンを立てる"}
                 </Button>
               </div>
