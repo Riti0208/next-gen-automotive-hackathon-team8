@@ -11,10 +11,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Phone, PhoneOff, MapPin, X, Navigation } from "lucide-react";
+import { Phone, PhoneOff, MapPin, X, Navigation, Mic, MicOff } from "lucide-react";
 import { useWebRTC } from "@/hooks/useWebRTC";
 import { VideoPlayer } from "@/components/video-player";
 import { createRealtimeService } from "@/lib/services/realtimeService";
+import { useRemoteAudioTranscription } from "@/hooks/useRemoteAudioTranscription";
 
 const libraries: ("places" | "geometry" | "drawing")[] = ["places"];
 
@@ -92,6 +93,97 @@ export function DriverMap() {
     onSessionEnded: () => {
       console.log("Session ended by peer");
       setActiveSession(null);
+    },
+  });
+
+  // remoteStreamから音声文字起こし機能(自動)
+  const [aiResponse, setAiResponse] = useState<string>("");
+
+  const handleTranscript = useCallback(async (transcriptText: string) => {
+    console.log("[Driver] Received transcript from Supporter:", transcriptText);
+
+    // Mastraエージェントに送信
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: transcriptText }),
+      });
+
+      const data = await response.json();
+      console.log("[Driver] AI Response:", data);
+
+      if (data.success) {
+        setAiResponse(data.text);
+
+        // ツール実行結果を確認
+        if (data.toolCalls && data.toolCalls.length > 0) {
+          for (const toolCall of data.toolCalls) {
+            if (toolCall.toolName === 'add-location-pin' && toolCall.input.address) {
+              console.log("[Driver] Adding pin for:", toolCall.input.address);
+              // ピン追加処理
+              const address = toolCall.input.address;
+              if (!address.trim()) return;
+
+              setIsGeocodingLoading(true);
+              setGeocodingError(null);
+
+              if (isLoaded) {
+                const geocoder = new google.maps.Geocoder();
+
+                try {
+                  const result = await geocoder.geocode({
+                    address: address,
+                    region: "jp",
+                  });
+
+                  if (result.results.length === 0) {
+                    setGeocodingError("場所が見つかりませんでした");
+                    return;
+                  }
+
+                  const location = result.results[0].geometry.location;
+                  const newPin = {
+                    id: Date.now().toString(),
+                    location: {
+                      lat: location.lat(),
+                      lng: location.lng(),
+                    },
+                    label: address,
+                  };
+
+                  setCustomPins([newPin]);
+                  setCustomPinDirections(null);
+                  setPinLocationInput("");
+                  setIsPinDialogOpen(false);
+                } catch (err) {
+                  setGeocodingError("場所の検索に失敗しました");
+                } finally {
+                  setIsGeocodingLoading(false);
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[Driver] Error calling AI:', error);
+    }
+  }, [isLoaded]);
+
+  // remoteStreamから音声を自動的に文字起こし(activeSessionがある時のみ)
+  const {
+    transcript,
+    isRecording,
+    isProcessing,
+    error: transcriptionError,
+  } = useRemoteAudioTranscription({
+    remoteStream,
+    enabled: !!activeSession, // activeSessionがあれば自動的に有効化
+    recordingIntervalMs: 3000, // 3秒ごとに文字起こし
+    onTranscript: handleTranscript,
+    onError: (error) => {
+      console.error('[Driver] Transcription error:', error);
     },
   });
 
@@ -503,6 +595,40 @@ export function DriverMap() {
         {remoteStream && (
           <div className="hidden">
             <VideoPlayer stream={remoteStream} muted={false} label={""} />
+          </div>
+        )}
+
+        {/* 文字起こし結果表示 (activeSessionがある場合のみ) */}
+        {activeSession && (transcript || aiResponse || isProcessing) && (
+          <div className="pointer-events-auto fixed bottom-24 left-4 right-4 z-[10000] mx-auto max-w-md">
+            <Card className="bg-background/95 shadow-xl backdrop-blur">
+              <CardContent className="space-y-2 p-4">
+                {transcript && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Supporterの指示:
+                    </p>
+                    <p className="text-sm">{transcript}</p>
+                  </div>
+                )}
+                {isProcessing && (
+                  <div className="text-xs text-muted-foreground">
+                    処理中...
+                  </div>
+                )}
+                {aiResponse && (
+                  <div className="space-y-1 border-t pt-2">
+                    <p className="text-xs font-medium text-muted-foreground">AIアシスタント:</p>
+                    <p className="text-sm">{aiResponse}</p>
+                  </div>
+                )}
+                {transcriptionError && (
+                  <div className="text-xs text-red-500">
+                    エラー: {transcriptionError}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         )}
 

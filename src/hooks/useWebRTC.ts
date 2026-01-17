@@ -43,30 +43,139 @@ export function useWebRTC({
       return;
     }
 
+    // モバイル検出
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+      navigator.userAgent
+    );
+
+    // メディア制約を生成
+    const getMediaConstraints = () => {
+      if (!videoEnabled) {
+        return { video: false, audio: true };
+      }
+
+      // Driver (Initiator) with video
+      const videoConstraints = isMobile
+        ? {
+            facingMode: { ideal: "environment" }, // リアカメラを優先
+            width: { ideal: 1280, max: 1920 },
+            height: { ideal: 720, max: 1080 },
+            frameRate: { ideal: 30, max: 30 },
+          }
+        : {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 30 },
+          };
+
+      const audioConstraints = isMobile
+        ? {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          }
+        : true;
+
+      return {
+        video: videoConstraints,
+        audio: audioConstraints,
+      };
+    };
+
+    // エラーハンドリング
+    const handleMediaError = (error: unknown) => {
+      const errorMsg = error instanceof Error ? error.message : "Unknown media error";
+
+      if (errorMsg.includes("NotAllowedError") || errorMsg.includes("Permission denied")) {
+        setError(
+          "カメラ/マイクへのアクセスが拒否されました。\n" +
+          (isMobile
+            ? "スマートフォンの場合:\n" +
+              "1. ブラウザの設定でカメラとマイクの権限を許可してください\n" +
+              "2. 他のアプリでカメラが使用中でないか確認してください\n" +
+              "3. HTTPSで接続していることを確認してください"
+            : "ブラウザの設定でカメラとマイクの権限を許可してください。")
+        );
+      } else if (errorMsg.includes("NotFoundError")) {
+        setError("カメラまたはマイクが見つかりません。デバイスが接続されているか確認してください。");
+      } else if (errorMsg.includes("NotReadableError")) {
+        setError(
+          "カメラ/マイクにアクセスできません。\n" +
+          "他のアプリケーションで使用中の可能性があります。"
+        );
+      } else if (errorMsg.includes("OverconstrainedError")) {
+        setError(
+          "要求されたカメラ設定がデバイスでサポートされていません。\n" +
+          "別のブラウザまたはデバイスをお試しください。"
+        );
+      } else if (errorMsg.includes("SecurityError")) {
+        setError(
+          "セキュリティエラー: HTTPSで接続してください。\n" +
+          (isMobile ? "スマートフォンではHTTPSが必須です。" : "")
+        );
+      } else {
+        setError(`メディアストリームの取得に失敗しました: ${errorMsg}`);
+      }
+    };
+
     const init = async () => {
       try {
         console.log("Initializing WebRTC with sessionId:", sessionId);
+        console.log("Device type:", isMobile ? "Mobile" : "Desktop");
+
         // メディアストリーム取得
         let stream: MediaStream;
+        const constraints = getMediaConstraints();
+
+        console.log("Requesting media with constraints:", constraints);
+
         try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: videoEnabled,
-            audio: true,
-          });
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
           console.log("Media stream acquired successfully");
+          console.log("Available tracks:", stream.getTracks().map(track => ({
+            kind: track.kind,
+            label: track.label,
+            enabled: track.enabled,
+            readyState: track.readyState,
+            settings: track.getSettings(),
+          })));
         } catch (mediaError) {
           console.error("Failed to get media stream:", mediaError);
-          const errorMsg = mediaError instanceof Error ? mediaError.message : "Unknown media error";
 
-          // 同じブラウザでの制限についての警告
-          if (errorMsg.includes("NotAllowedError") || errorMsg.includes("Permission denied")) {
-            setError("カメラ/マイクへのアクセスが拒否されました。同じブラウザで複数のタブを開いている場合、メディアデバイスへのアクセスが競合している可能性があります。");
-          } else if (errorMsg.includes("NotFoundError")) {
-            setError("カメラまたはマイクが見つかりません。デバイスが接続されているか確認してください。");
+          // フォールバック: 制約を緩めて再試行
+          if (constraints.video && typeof constraints.video === 'object') {
+            console.log("Trying fallback constraints...");
+            try {
+              const fallbackConstraints = {
+                video: isMobile
+                  ? {
+                      facingMode: "environment",
+                      width: { ideal: 640 },
+                      height: { ideal: 480 },
+                    }
+                  : {
+                      width: { ideal: 640 },
+                      height: { ideal: 480 },
+                    },
+                audio: true,
+              };
+              console.log("Fallback constraints:", fallbackConstraints);
+              stream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
+              console.log("Fallback constraints succeeded");
+              console.log("Fallback tracks:", stream.getTracks().map(track => ({
+                kind: track.kind,
+                label: track.label,
+                settings: track.getSettings(),
+              })));
+            } catch (fallbackError) {
+              console.error("Fallback also failed:", fallbackError);
+              handleMediaError(mediaError);
+              throw mediaError;
+            }
           } else {
-            setError(`メディアストリームの取得に失敗しました: ${errorMsg}`);
+            handleMediaError(mediaError);
+            throw mediaError;
           }
-          throw mediaError;
         }
         localStreamRef.current = stream;
         setLocalStream(stream);
@@ -76,7 +185,16 @@ export function useWebRTC({
           iceServers: [
             { urls: "stun:stun.l.google.com:19302" },
             { urls: "stun:stun1.l.google.com:19302" },
+            // TURN server for mobile networks (carrier-grade NAT対策)
+            {
+              urls: "turn:openrelay.metered.ca:80",
+              username: "openrelayproject",
+              credential: "openrelayproject",
+            },
           ],
+          iceTransportPolicy: 'all',
+          bundlePolicy: 'max-bundle',
+          rtcpMuxPolicy: 'require',
         });
         peerConnectionRef.current = pc;
 
@@ -130,14 +248,26 @@ export function useWebRTC({
           }
         };
 
-        // ICE接続状態監視
+        // ICE接続状態監視（詳細ログ）
         pc.oniceconnectionstatechange = () => {
           console.log("ICE connection state:", pc.iceConnectionState);
+          if (pc.iceConnectionState === 'failed') {
+            console.error("ICE connection failed - TURN server may be needed or network issue");
+            console.error("Local description:", pc.localDescription);
+            console.error("Remote description:", pc.remoteDescription);
+          } else if (pc.iceConnectionState === 'disconnected') {
+            console.warn("ICE connection disconnected - attempting to reconnect");
+          } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+            console.log("ICE connection successful");
+          }
         };
 
         // ICE収集状態監視
         pc.onicegatheringstatechange = () => {
           console.log("ICE gathering state:", pc.iceGatheringState);
+          if (pc.iceGatheringState === 'complete') {
+            console.log("ICE gathering completed");
+          }
         };
 
         // Realtime購読（重要: リスナー登録を先に行う）
