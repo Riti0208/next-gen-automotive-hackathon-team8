@@ -1,4 +1,4 @@
-export type WebRTCMessageType = "offer" | "answer" | "ice-candidate";
+export type WebRTCMessageType = "offer" | "answer" | "ice-candidate" | "ready" | "session-end";
 
 export interface WebRTCOffer {
   type: "offer";
@@ -24,7 +24,21 @@ export interface WebRTCIceCandidate {
   candidate: RTCIceCandidateInit;
 }
 
-export type WebRTCMessage = WebRTCOffer | WebRTCAnswer | WebRTCIceCandidate;
+export interface WebRTCReady {
+  type: "ready";
+  sessionId: string;
+  fromId: string;
+  toId: string;
+}
+
+export interface WebRTCSessionEnd {
+  type: "session-end";
+  sessionId: string;
+  fromId: string;
+  toId: string;
+}
+
+export type WebRTCMessage = WebRTCOffer | WebRTCAnswer | WebRTCIceCandidate | WebRTCReady | WebRTCSessionEnd;
 
 export interface WebRTCBroadcastPayload {
   sessionId: string;

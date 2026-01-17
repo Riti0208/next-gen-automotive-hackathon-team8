@@ -76,12 +76,16 @@ export function DriverMap() {
   const watchIdRef = useRef<number | null>(null);
 
   // WebRTC connection
-  const { localStream, remoteStream, isConnected } = useWebRTC({
+  const { localStream, remoteStream, isConnected, endSession } = useWebRTC({
     sessionId: activeSession?.sessionId || "",
     myId: activeSession?.driverId || "driver_001",
     peerId: activeSession?.supporterId || "",
     isInitiator: true,
     videoEnabled: true, // ドライバーはビデオ送信
+    onSessionEnded: () => {
+      console.log("Session ended by peer");
+      setActiveSession(null);
+    },
   });
 
   const [customPins, setCustomPins] = useState<CustomPin[]>([]);
@@ -223,17 +227,21 @@ export function DriverMap() {
   const endCall = useCallback(async () => {
     if (activeSession) {
       try {
+        // API呼び出し
         await fetch("/api/driver/end-session", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sessionId: activeSession.sessionId }),
         });
+
+        // Realtime経由で終了通知を送信
+        await endSession();
       } catch (error) {
         console.error("Failed to end session:", error);
       }
     }
     setActiveSession(null);
-  }, [activeSession]);
+  }, [activeSession, endSession]);
 
   const addPinFromAddress = useCallback(async () => {
     if (!pinLocationInput.trim()) {

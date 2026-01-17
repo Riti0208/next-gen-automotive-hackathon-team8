@@ -24,10 +24,7 @@ export class RealtimeService {
     return this.channel.send({
       type: "broadcast",
       event: "location",
-      payload: {
-        sessionId,
-        ...location,
-      },
+      payload: location,
     });
   }
 
@@ -104,6 +101,42 @@ export class RealtimeService {
     return this.channel.on(
       "broadcast",
       { event: "call-request" },
+      ({ payload }) => {
+        callback(payload as any);
+      }
+    );
+  }
+
+  broadcastSessionEnd(sessionId: string, fromId: string, toId: string) {
+    if (!this.channel) {
+      throw new Error("Channel not initialized. Call subscribeToSession first.");
+    }
+
+    return this.channel.send({
+      type: "broadcast",
+      event: "session-end",
+      payload: {
+        sessionId,
+        fromId,
+        toId,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+
+  onSessionEnd(callback: (payload: {
+    sessionId: string;
+    fromId: string;
+    toId: string;
+    timestamp: string;
+  }) => void) {
+    if (!this.channel) {
+      throw new Error("Channel not initialized. Call subscribeToSession first.");
+    }
+
+    return this.channel.on(
+      "broadcast",
+      { event: "session-end" },
       ({ payload }) => {
         callback(payload as any);
       }

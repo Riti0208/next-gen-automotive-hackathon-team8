@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { createRealtimeService } from "@/lib/services/realtimeService";
 import type { WebRTCMessage } from "@/types/webrtc";
 
@@ -10,6 +10,7 @@ interface UseWebRTCOptions {
   peerId: string;
   isInitiator: boolean; // true = ドライバー（Offer送信側）, false = サポーター（Answer送信側）
   videoEnabled?: boolean; // ビデオ送信を有効化
+  onSessionEnded?: () => void; // セッション終了時のコールバック
 }
 
 export function useWebRTC({
@@ -18,6 +19,7 @@ export function useWebRTC({
   peerId,
   isInitiator,
   videoEnabled = true,
+  onSessionEnded,
 }: UseWebRTCOptions) {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
@@ -26,6 +28,13 @@ export function useWebRTC({
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const realtimeServiceRef = useRef(createRealtimeService());
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const onSessionEndedRef = useRef(onSessionEnded);
+
+  // onSessionEndedの最新の参照を保持
+  useEffect(() => {
+    onSessionEndedRef.current = onSessionEnded;
+  }, [onSessionEnded]);
 
   useEffect(() => {
     // sessionIdが空の場合は実行しない
@@ -38,10 +47,28 @@ export function useWebRTC({
       try {
         console.log("Initializing WebRTC with sessionId:", sessionId);
         // メディアストリーム取得
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: videoEnabled,
-          audio: true,
-        });
+        let stream: MediaStream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: videoEnabled,
+            audio: true,
+          });
+          console.log("Media stream acquired successfully");
+        } catch (mediaError) {
+          console.error("Failed to get media stream:", mediaError);
+          const errorMsg = mediaError instanceof Error ? mediaError.message : "Unknown media error";
+
+          // 同じブラウザでの制限についての警告
+          if (errorMsg.includes("NotAllowedError") || errorMsg.includes("Permission denied")) {
+            setError("カメラ/マイクへのアクセスが拒否されました。同じブラウザで複数のタブを開いている場合、メディアデバイスへのアクセスが競合している可能性があります。");
+          } else if (errorMsg.includes("NotFoundError")) {
+            setError("カメラまたはマイクが見つかりません。デバイスが接続されているか確認してください。");
+          } else {
+            setError(`メディアストリームの取得に失敗しました: ${errorMsg}`);
+          }
+          throw mediaError;
+        }
+        localStreamRef.current = stream;
         setLocalStream(stream);
 
         // PeerConnection作成
@@ -55,6 +82,7 @@ export function useWebRTC({
 
         // ローカルストリーム追加
         stream.getTracks().forEach((track) => {
+          console.log(`Adding local track: ${track.kind}`);
           pc.addTrack(track, stream);
         });
 
@@ -65,12 +93,16 @@ export function useWebRTC({
         pc.ontrack = (event) => {
           console.log("Received remote track:", event.track.kind);
           if (event.streams && event.streams[0]) {
+            console.log("Adding tracks from stream, track count:", event.streams[0].getTracks().length);
             event.streams[0].getTracks().forEach((track) => {
               remote.addTrack(track);
             });
           } else if (event.track) {
+            console.log("Adding single track");
             remote.addTrack(event.track);
           }
+          console.log("Remote stream now has tracks:", remote.getTracks().length);
+          setRemoteStream(new MediaStream(remote.getTracks()));
         };
 
         // ICE Candidate
@@ -89,7 +121,13 @@ export function useWebRTC({
         // 接続状態監視
         pc.onconnectionstatechange = () => {
           console.log("Connection state:", pc.connectionState);
-          setIsConnected(pc.connectionState === "connected");
+          const isConn = pc.connectionState === "connected";
+          setIsConnected(isConn);
+          if (isConn) {
+            console.log("WebRTC connection established successfully");
+            console.log("Local tracks:", localStreamRef.current?.getTracks().map(t => t.kind));
+            console.log("Remote tracks:", remote.getTracks().map(t => t.kind));
+          }
         };
 
         // ICE接続状態監視
@@ -102,23 +140,28 @@ export function useWebRTC({
           console.log("ICE gathering state:", pc.iceGatheringState);
         };
 
-        // Realtime購読
+        // Realtime購読（重要: リスナー登録を先に行う）
         const rtService = realtimeServiceRef.current;
         rtService.subscribeToSession(sessionId);
         rtService.onWebRTCSignal(handleSignal);
-        await rtService.subscribe();
+        rtService.onSessionEnd(handleSessionEnd);
 
-        // Initiatorの場合、Offer作成
-        if (isInitiator) {
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
+        // 購読完了を待ってから進める
+        await rtService.subscribe();
+        console.log("Realtime subscription completed");
+
+        // 非Initiator（Supporter）の場合、準備完了を通知
+        if (!isInitiator) {
+          console.log("Sending ready signal to initiator");
           await rtService.broadcastWebRTCSignal(sessionId, {
-            type: "offer",
+            type: "ready",
             sessionId,
             fromId: myId,
             toId: peerId,
-            sdp: offer,
           });
+          console.log("Waiting for offer as non-initiator");
+        } else {
+          console.log("Waiting for ready signal from peer before sending offer");
         }
       } catch (err) {
         console.error("WebRTC initialization error:", err);
@@ -126,15 +169,79 @@ export function useWebRTC({
       }
     };
 
+    const handleSessionEnd = (payload: {
+      sessionId: string;
+      fromId: string;
+      toId: string;
+      timestamp: string;
+    }) => {
+      console.log(`Session ended by ${payload.fromId} at ${payload.timestamp}`);
+
+      // 自分宛の終了通知のみ処理
+      if (payload.toId !== myId) {
+        console.log(`Ignoring session end not for me. toId: ${payload.toId}, myId: ${myId}`);
+        return;
+      }
+
+      // PeerConnectionをクローズ
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
+        peerConnectionRef.current = null;
+      }
+
+      // ローカルストリームを停止
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((track) => track.stop());
+        localStreamRef.current = null;
+      }
+      setLocalStream(null);
+      setRemoteStream(null);
+      setIsConnected(false);
+
+      // コールバックを実行
+      if (onSessionEndedRef.current) {
+        onSessionEndedRef.current();
+      }
+    };
+
     const handleSignal = async (message: WebRTCMessage) => {
       const pc = peerConnectionRef.current;
       if (!pc) return;
 
+      // メッセージフィルタリング: 自分宛のメッセージのみ処理
+      if (message.toId !== myId) {
+        console.log(`Ignoring message not for me. toId: ${message.toId}, myId: ${myId}`);
+        return;
+      }
+
+      // 送信元が期待するピアIDと一致するか確認
+      if (message.fromId !== peerId) {
+        console.log(`Ignoring message from unexpected peer. fromId: ${message.fromId}, expected: ${peerId}`);
+        return;
+      }
+
+      console.log(`Received WebRTC signal: ${message.type} from ${message.fromId}`);
+
       try {
-        if (message.type === "offer" && !isInitiator) {
+        if (message.type === "ready" && isInitiator) {
+          // Supporter側の準備が完了したので、Offerを送信
+          console.log("Peer is ready, creating and sending offer");
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          await realtimeServiceRef.current.broadcastWebRTCSignal(sessionId, {
+            type: "offer",
+            sessionId,
+            fromId: myId,
+            toId: peerId,
+            sdp: offer,
+          });
+          console.log("Offer sent successfully");
+        } else if (message.type === "offer" && !isInitiator) {
+          console.log("Processing offer and creating answer");
           await pc.setRemoteDescription(new RTCSessionDescription(message.sdp));
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
+          console.log("Sending answer");
           await realtimeServiceRef.current.broadcastWebRTCSignal(sessionId, {
             type: "answer",
             sessionId,
@@ -143,8 +250,10 @@ export function useWebRTC({
             sdp: answer,
           });
         } else if (message.type === "answer" && isInitiator) {
+          console.log("Processing answer");
           await pc.setRemoteDescription(new RTCSessionDescription(message.sdp));
         } else if (message.type === "ice-candidate") {
+          console.log("Adding ICE candidate");
           await pc.addIceCandidate(new RTCIceCandidate(message.candidate));
         }
       } catch (err) {
@@ -157,16 +266,36 @@ export function useWebRTC({
 
     return () => {
       // クリーンアップ
-      localStream?.getTracks().forEach((track) => track.stop());
-      peerConnectionRef.current?.close();
+      console.log("Cleaning up WebRTC connection");
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((track) => track.stop());
+        localStreamRef.current = null;
+      }
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
+        peerConnectionRef.current = null;
+      }
       realtimeServiceRef.current.unsubscribe();
+      setLocalStream(null);
+      setRemoteStream(null);
+      setIsConnected(false);
+      setError(null);
     };
   }, [sessionId, myId, peerId, isInitiator, videoEnabled]);
+
+  const endSession = useCallback(async () => {
+    if (!sessionId || !myId || !peerId) return;
+
+    const rtService = realtimeServiceRef.current;
+    await rtService.broadcastSessionEnd(sessionId, myId, peerId);
+    console.log("Session end notification sent via WebRTC hook");
+  }, [sessionId, myId, peerId]);
 
   return {
     localStream,
     remoteStream,
     isConnected,
     error,
+    endSession,
   };
 }
