@@ -29,6 +29,12 @@ const SAPPORO_PARKING_LOCATION = {
   lng: 141.3514,
 };
 
+// 函館IC付近の座標を追加
+const HAKODATE_IC_LOCATION = {
+  lat: 41.8394,
+  lng: 140.7375,
+};
+
 const NAVIGATION_ZOOM_LEVEL = 18;
 
 interface Location {
@@ -57,7 +63,8 @@ export function DriverMap() {
   const [map, setMap] = useState<google.maps.Map | null>(null);
 
   // 現在地を札幌の駐車場に固定
-  const [currentLocation] = useState<Location>(SAPPORO_PARKING_LOCATION);
+  const [currentLocation, setCurrentLocation] = useState<Location>(SAPPORO_PARKING_LOCATION);
+  const [hasSkipped, setHasSkipped] = useState(false);
 
   const [destination, setDestination] = useState<string>("");
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
@@ -166,6 +173,10 @@ export function DriverMap() {
           steps: leg.steps || [],
         });
         if (leg.end_location) {
+          console.log({
+            lat: leg.end_location.lat(),
+            lng: leg.end_location.lng(),
+          });
           setDestinationLocation({
             lat: leg.end_location.lat(),
             lng: leg.end_location.lng(),
@@ -316,6 +327,16 @@ export function DriverMap() {
   const clearCustomPinRoute = useCallback(() => {
     setCustomPinDirections(null);
   }, []);
+
+  // 函館へジャンプする関数
+  const jumpToHakodate = useCallback(() => {
+    setCurrentLocation(HAKODATE_IC_LOCATION);
+    setHasSkipped(true);
+    if (map) {
+      map.panTo(HAKODATE_IC_LOCATION);
+      map.setZoom(15);
+    }
+  }, [map]);
 
   if (loadError) return <div className="p-4 text-destructive">Google Mapsの読み込みに失敗しました</div>;
   if (!isLoaded) return <div className="p-4 text-muted-foreground">地図を読み込み中...</div>;
@@ -481,7 +502,15 @@ export function DriverMap() {
           </div>
         )}
 
+        {/* 右下のボタン群 */}
         <div className="pointer-events-auto fixed bottom-8 right-4 z-[10000] flex flex-col gap-3">
+          {/* テスト用スキップボタン: 経路検索後かつ未スキップ時に表示 */}
+          {directions && !hasSkipped && (
+            <Button size="lg" onClick={jumpToHakodate} className="h-14 w-14 rounded-full bg-amber-500 p-0 shadow-xl">
+              <Navigation className="h-6 w-6" />
+            </Button>
+          )}
+
           {customPins.length > 0 && (
             customPinDirections ? (
               <Button size="lg" onClick={clearCustomPinRoute} className="h-14 w-14 rounded-full bg-gray-500 p-0 shadow-xl">

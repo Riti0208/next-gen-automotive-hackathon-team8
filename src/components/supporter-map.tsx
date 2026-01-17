@@ -6,6 +6,7 @@ import {
   useJsApiLoader,
   Marker,
   InfoWindow,
+  DirectionsRenderer,
 } from "@react-google-maps/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,11 @@ const HAKODATE_CENTER = {
   lat: 41.7687,
   lng: 140.7288,
 };
+
+// ドライバーの座標ハードコード
+const SAPPORO_PARKING_LOCATION = { lat: 43.0696, lng: 141.3514 };
+const HAKODATE_IC_LOCATION = { lat: 41.8394, lng: 140.7375 };
+const HAKODATE_DESTINATION = { lat: 41.7684953, lng: 140.7294259 };
 
 // ドライバーのステータス
 type DriverStatus = "available" | "busy" | "offline";
@@ -63,6 +69,7 @@ export function SupporterMap() {
   });
 
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
+  const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
   // モックデータを削除し、空の状態で初期化
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [incomingCall, setIncomingCall] = useState<CallRequest | null>(null);
@@ -123,6 +130,27 @@ export function SupporterMap() {
       console.error("[Supporter Map] Failed to load Maps API:", loadError);
     }
   }, [isLoaded, loadError]);
+
+  useEffect(() => {
+    if (activeSession && isLoaded) {
+      const directionsService = new google.maps.DirectionsService();
+
+      directionsService.route(
+        {
+          origin: SAPPORO_PARKING_LOCATION, // スタート
+          destination: HAKODATE_DESTINATION, // ゴール
+          travelMode: google.maps.TravelMode.DRIVING,
+        },
+        (result, status) => {
+          if (status === google.maps.DirectionsStatus.OK) {
+            setDirections(result); // 経路情報をセット
+          }
+        }
+      );
+    } else {
+      setDirections(null); // 通話終了時に経路を消去
+    }
+  }, [activeSession, isLoaded]);
 
   const onLoad = useCallback(() => {
     console.log("[Supporter Map] Map initialized with center:", HAKODATE_CENTER);
@@ -232,7 +260,7 @@ export function SupporterMap() {
       <div className="absolute inset-0">
         <GoogleMap
           mapContainerStyle={containerStyle}
-          center={HAKODATE_CENTER}
+          center={activeSession ? HAKODATE_IC_LOCATION : HAKODATE_CENTER}
           zoom={14}
           onLoad={onLoad}
           onUnmount={onUnmount}
@@ -250,6 +278,32 @@ export function SupporterMap() {
             ],
           }}
         >
+          {/* A. 経路の描画 (DirectionsRenderer) */}
+          {directions && (
+            <DirectionsRenderer
+              directions={directions}
+              options={{ 
+                preserveViewport: true,
+                polylineOptions: { strokeColor: "#3b82f6", strokeWeight: 5 }
+              }}
+            />
+          )}
+
+          {/* B. 通話中のみ表示するドライバーの現在地マーカー */}
+          {activeSession && (
+            <Marker
+              position={HAKODATE_IC_LOCATION}
+              icon={{
+                path: "M-8,-12 L8,-12 L10,-6 L10,8 L8,12 L-8,12 L-10,8 L-10,-6 Z M-6,-10 L-6,-4 L6,-4 L6,-10 Z", // 車のパス
+                fillColor: "#ef4444",
+                fillOpacity: 1,
+                strokeWeight: 2,
+                scale: 1.5,
+                rotation: 180, // 進行方向
+              }}
+            />
+          )}
+
           {/* 函館中心地マーカー */}
           <Marker
             position={HAKODATE_CENTER}
