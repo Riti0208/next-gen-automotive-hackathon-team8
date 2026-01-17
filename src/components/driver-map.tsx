@@ -638,7 +638,7 @@ export function DriverMap() {
         )}
 
         {/* テスト用入力欄 */}
-        <div className="pointer-events-auto fixed left-4 top-4 z-[10000] w-80">
+        {/* <div className="pointer-events-auto fixed left-4 top-4 z-[10000] w-80">
           <Card className="bg-background/95 shadow-xl backdrop-blur">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">AI テスト (Function Calling)</CardTitle>
@@ -666,7 +666,7 @@ export function DriverMap() {
               </Button>
             </CardContent>
           </Card>
-        </div>
+        </div> */}
 
         {/* 文字起こし結果表示 (activeSessionがある場合のみ) */}
         {activeSession && (transcript || aiResponse || isProcessing) && (
@@ -703,7 +703,7 @@ export function DriverMap() {
         )}
 
         {/* AI応答表示（テスト入力用、常に表示） */}
-        {aiResponse && !activeSession && (
+        {/* {aiResponse && !activeSession && (
           <div className="pointer-events-auto fixed bottom-4 left-4 right-4 z-[10000] mx-auto max-w-md">
             <Card className="bg-background/95 shadow-xl backdrop-blur">
               <CardContent className="space-y-2 p-4">
@@ -714,7 +714,7 @@ export function DriverMap() {
               </CardContent>
             </Card>
           </div>
-        )}
+        )} */}
 
         {/* 右下のボタン群 */}
         <div className="pointer-events-auto fixed bottom-8 right-4 z-[10000] flex flex-col gap-3">
