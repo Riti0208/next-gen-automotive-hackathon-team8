@@ -9,7 +9,10 @@ import {
 } from "@react-google-maps/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Car, Clock, MapPin, Phone, X, TestTube2 } from "lucide-react";
+import { Car, Clock, MapPin, Phone, X, TestTube2, Video, VideoOff } from "lucide-react";
+import { useWebRTC } from "@/hooks/useWebRTC";
+import { VideoPlayer } from "@/components/video-player";
+import { createRealtimeService } from "@/lib/services/realtimeService";
 
 const libraries: ("places" | "geometry" | "drawing")[] = ["places"];
 
@@ -116,6 +119,50 @@ export function SupporterMap() {
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
   const [drivers] = useState<Driver[]>(mockDrivers);
   const [incomingCall, setIncomingCall] = useState<CallRequest | null>(null);
+  const [activeSession, setActiveSession] = useState<{
+    sessionId: string;
+    driverId: string;
+    driverName: string;
+  } | null>(null);
+
+  // Realtime通知をリッスン
+  useEffect(() => {
+    const realtimeService = createRealtimeService();
+    const channel = realtimeService.subscribeToSession("demo-session-001");
+
+    realtimeService.onCallRequest((payload) => {
+      console.log("[Supporter] Incoming call request:", payload);
+
+      // 着信ポップアップを表示
+      setIncomingCall({
+        driver: {
+          id: payload.driverId,
+          name: payload.driverName,
+          location: { lat: 0, lng: 0 }, // モック
+          status: "available",
+          lastUpdate: "今",
+          heading: 0,
+        },
+        timestamp: new Date(payload.timestamp),
+        destination: payload.destination,
+      });
+    });
+
+    realtimeService.subscribe();
+
+    return () => {
+      realtimeService.unsubscribe();
+    };
+  }, []);
+
+  // WebRTC connection
+  const { remoteStream, isConnected } = useWebRTC({
+    sessionId: activeSession?.sessionId || "",
+    myId: "supporter_001",
+    peerId: activeSession?.driverId || "",
+    isInitiator: false,
+    videoEnabled: false, // サポーターはビデオ送信しない
+  });
 
   useEffect(() => {
     if (isLoaded) {
@@ -161,9 +208,35 @@ export function SupporterMap() {
 
   // コールに応答
   const acceptCall = useCallback(() => {
+    if (!incomingCall) return;
+
     console.log("[Supporter] Call accepted:", incomingCall);
+
+    // 固定セッションIDを使用（デモ用）
+    setActiveSession({
+      sessionId: "demo-session-001",
+      driverId: incomingCall.driver.id,
+      driverName: incomingCall.driver.name,
+    });
+
     setIncomingCall(null);
   }, [incomingCall]);
+
+  // 通話を終了
+  const endCall = useCallback(async () => {
+    if (activeSession) {
+      try {
+        await fetch("/api/driver/end-session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId: activeSession.sessionId }),
+        });
+      } catch (error) {
+        console.error("Failed to end session:", error);
+      }
+    }
+    setActiveSession(null);
+  }, [activeSession]);
 
   const getDriverCounts = useCallback(() => {
     return {
@@ -306,37 +379,49 @@ export function SupporterMap() {
         </GoogleMap>
       </div>
 
-      {/* オーバーレイ: ステータスパネル */}
-      <div className="pointer-events-none absolute inset-0 z-[1000] flex flex-col p-4">
-        {/* 上部: タイトルとステータス */}
-        <div className="pointer-events-auto flex w-full flex-col gap-4 lg:w-96">
-          <Card className="bg-background/95 shadow-lg backdrop-blur">
-            <CardContent className="p-4">
-              <h2 className="mb-3 text-lg font-bold">ドライバーモニター</h2>
-              <p className="mb-3 text-sm text-muted-foreground">
-                <MapPin className="mr-1 inline h-4 w-4" />
-                秩父エリア
-              </p>
+      {/* 右上: ビデオ表示 */}
+      {activeSession && (
+        <div className="pointer-events-auto absolute right-4 top-4 z-[1000]">
+          <Card className="w-80 overflow-hidden bg-background/95 shadow-lg backdrop-blur">
+            <CardContent className="p-0">
+              {/* ビデオプレーヤー */}
+              <div className="relative aspect-video bg-gray-900">
+                {remoteStream ? (
+                  <VideoPlayer
+                    stream={remoteStream}
+                    muted={false}
+                    label=""
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-white">
+                    <VideoOff className="h-12 w-12" />
+                  </div>
+                )}
+              </div>
 
-              {/* ステータス一覧 */}
-              <div className="grid grid-cols-3 gap-2">
-                <div className="rounded-lg bg-green-100 p-2 text-center dark:bg-green-900/50">
-                  <div className="text-2xl font-bold text-green-600 dark:text-green-400">{counts.available}</div>
-                  <div className="text-xs text-green-700 dark:text-green-300">空車</div>
+              {/* コントロールバー */}
+              <div className="flex items-center justify-between bg-gray-800 p-2 text-white">
+                <div className="flex items-center gap-2 text-sm">
+                  <Video className="h-4 w-4" />
+                  <span>{activeSession.driverName}</span>
+                  {isConnected && (
+                    <span className="ml-2 inline-block h-2 w-2 rounded-full bg-green-500" />
+                  )}
                 </div>
-                <div className="rounded-lg bg-amber-100 p-2 text-center dark:bg-amber-900/50">
-                  <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">{counts.busy}</div>
-                  <div className="text-xs text-amber-700 dark:text-amber-300">運行中</div>
-                </div>
-                <div className="rounded-lg bg-gray-200 p-2 text-center dark:bg-gray-700/50">
-                  <div className="text-2xl font-bold text-gray-600 dark:text-gray-300">{counts.offline}</div>
-                  <div className="text-xs text-gray-700 dark:text-gray-400">オフライン</div>
-                </div>
+                <Button
+                  onClick={endCall}
+                  size="sm"
+                  variant="destructive"
+                  className="h-8"
+                >
+                  <Phone className="mr-1 h-4 w-4" />
+                  終了
+                </Button>
               </div>
             </CardContent>
           </Card>
         </div>
-      </div>
+      )}
 
       {/* テストボタン（右下） */}
       <div className="pointer-events-auto absolute bottom-6 right-6 z-[1001]">

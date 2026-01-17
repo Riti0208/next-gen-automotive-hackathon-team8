@@ -11,7 +11,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Phone } from "lucide-react";
+import { Phone, PhoneOff } from "lucide-react";
+import { useWebRTC } from "@/hooks/useWebRTC";
+import { VideoPlayer } from "@/components/video-player";
+import { createRealtimeService } from "@/lib/services/realtimeService";
 
 const libraries: ("places" | "geometry" | "drawing")[] = ["places"];
 
@@ -64,9 +67,23 @@ export function DriverMap() {
   const [error, setError] = useState<string | null>(null);
   const [isLoadingRoute, setIsLoadingRoute] = useState(false);
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
+  const [activeSession, setActiveSession] = useState<{
+    sessionId: string;
+    supporterId: string;
+    driverId: string;
+  } | null>(null);
 
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
   const watchIdRef = useRef<number | null>(null);
+
+  // WebRTC connection
+  const { localStream, remoteStream, isConnected } = useWebRTC({
+    sessionId: activeSession?.sessionId || "",
+    myId: activeSession?.driverId || "driver_001",
+    peerId: activeSession?.supporterId || "",
+    isInitiator: true,
+    videoEnabled: true, // ドライバーはビデオ送信
+  });
 
   // 現在地を取得（初回のみ）
   useEffect(() => {
@@ -253,6 +270,50 @@ export function DriverMap() {
     }
   }, [map]);
 
+  // コール開始
+  const startCall = useCallback(async () => {
+    // 固定セッションIDを使用（デモ用）
+    const sessionId = "demo-session-001";
+
+    // Realtime経由で着信リクエストを送信
+    const realtimeService = createRealtimeService();
+    realtimeService.subscribeToSession(sessionId);
+    await realtimeService.subscribe();
+
+    await realtimeService.broadcastCallRequest(
+      "driver_001",
+      "観光太郎",
+      destination || undefined
+    );
+
+    console.log("[Driver] Call request sent");
+
+    setActiveSession({
+      sessionId,
+      supporterId: "supporter_001",
+      driverId: "driver_001", // ドライバーIDを追加
+    });
+
+    // チャンネルをクリーンアップ（WebRTC接続が確立するまで十分な時間を待つ）
+    // ICE候補の交換が完了するまで接続を維持
+  }, [destination]);
+
+  // コール終了
+  const endCall = useCallback(async () => {
+    if (activeSession) {
+      try {
+        await fetch("/api/driver/end-session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId: activeSession.sessionId }),
+        });
+      } catch (error) {
+        console.error("Failed to end session:", error);
+      }
+    }
+    setActiveSession(null);
+  }, [activeSession]);
+
   if (loadError) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -417,13 +478,32 @@ export function DriverMap() {
         {/* 下部: コールボタン - 経路表示中のみ */}
         {directions && (
           <div className="pointer-events-auto fixed bottom-8 left-1/2 z-[10000] -translate-x-1/2">
-            <Button
-              size="lg"
-              className="h-16 gap-3 rounded-full bg-green-500 px-10 text-xl font-bold text-white shadow-2xl hover:bg-green-600"
-            >
-              <Phone className="h-7 w-7" />
-              コールする
-            </Button>
+            {activeSession ? (
+              <Button
+                size="lg"
+                onClick={endCall}
+                className="h-16 gap-3 rounded-full bg-red-500 px-10 text-xl font-bold text-white shadow-2xl hover:bg-red-600"
+              >
+                <PhoneOff className="h-7 w-7" />
+                通話終了
+              </Button>
+            ) : (
+              <Button
+                size="lg"
+                onClick={startCall}
+                className="h-16 gap-3 rounded-full bg-green-500 px-10 text-xl font-bold text-white shadow-2xl hover:bg-green-600"
+              >
+                <Phone className="h-7 w-7" />
+                コールする
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* リモートオーディオプレーヤー（音声のみ、非表示） */}
+        {remoteStream && (
+          <div className="hidden">
+            <VideoPlayer stream={remoteStream} muted={false} />
           </div>
         )}
       </div>

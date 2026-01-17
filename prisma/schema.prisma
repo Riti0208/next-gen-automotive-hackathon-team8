@@ -17,3 +17,68 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+// Driver model - 観光客ドライバー
+model Driver {
+  id              String    @id @default(cuid())
+  name            String
+  currentSessionId String?  @unique
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  sessions        Session[]
+  currentSession  Session?  @relation("CurrentSession", fields: [currentSessionId], references: [id])
+}
+
+// Supporter model - 高齢者サポーター
+model Supporter {
+  id          String    @id @default(cuid())
+  name        String
+  facilityId  String
+  isOnline    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  sessions    Session[]
+}
+
+// Session model - 通話セッション
+model Session {
+  id          String    @id @default(cuid())
+  driverId    String
+  supporterId String?
+  status      SessionStatus @default(WAITING)
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+
+  driver      Driver    @relation(fields: [driverId], references: [id])
+  supporter   Supporter? @relation(fields: [supporterId], references: [id])
+  locations   Location[]
+  currentDriver Driver?  @relation("CurrentSession")
+
+  @@index([driverId])
+  @@index([supporterId])
+}
+
+// Location model - 位置情報履歴
+model Location {
+  id        String   @id @default(cuid())
+  sessionId String
+  latitude  Float
+  longitude Float
+  heading   Float?   // 向き（度数：0-360）
+  timestamp DateTime @default(now())
+
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([timestamp])
+}
+
+// Session status enum
+enum SessionStatus {
+  WAITING     // サポーター待ち
+  CONNECTING  // 接続中
+  ACTIVE      // 通話中
+  ENDED       // 終了
+}

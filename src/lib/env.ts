@@ -7,3 +7,7 @@ export function getRequiredEnv(key: string): string {
   }
   return value;
 }
+
+export function getEnv(key: string): string | undefined {
+  return process.env[key];
+}

@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import { seedUsers } from './seeds/user';
+import { seedSupporters } from './seeds/supporter';
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -18,6 +19,7 @@ async function main() {
   try {
     // Run all seeders
     await seedUsers();
+    await seedSupporters(prisma);
 
     console.log('✅ Seeding completed successfully');
   } catch (error) {
