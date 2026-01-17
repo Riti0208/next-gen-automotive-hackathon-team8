@@ -19,13 +19,22 @@ export class ChatService {
     const agent = mastra.getAgent('assistant');
     const result = await agent.generate(message);
 
+    console.log('[ChatService] Full result:', JSON.stringify(result, null, 2));
+    console.log('[ChatService] result.toolCalls:', result.toolCalls);
+
     // ツール実行結果を抽出
     const toolCalls =
-      result.toolCalls?.map((call: any) => ({
-        toolName: call.toolName,
-        input: call.args,
-        output: call.result,
-      })) || [];
+      result.toolCalls?.map((call: any) => {
+        console.log('[ChatService] Processing tool call:', call);
+        console.log('[ChatService] call keys:', Object.keys(call));
+        return {
+          toolName: call.payload?.toolName,
+          input: call.payload?.args,
+          output: call.payload?.result,
+        };
+      }) || [];
+
+    console.log('[ChatService] Mapped toolCalls:', toolCalls);
 
     return {
       text: result.text,

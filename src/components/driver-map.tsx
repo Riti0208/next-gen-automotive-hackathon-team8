@@ -99,6 +99,10 @@ export function DriverMap() {
   // remoteStreamから音声文字起こし機能(自動)
   const [aiResponse, setAiResponse] = useState<string>("");
 
+  // テスト用テキスト入力
+  const [testInput, setTestInput] = useState<string>("");
+  const [isTestProcessing, setIsTestProcessing] = useState<boolean>(false);
+
   const handleTranscript = useCallback(async (transcriptText: string) => {
     console.log("[Driver] Received transcript from Supporter:", transcriptText);
 
@@ -112,64 +116,99 @@ export function DriverMap() {
 
       const data = await response.json();
       console.log("[Driver] AI Response:", data);
+      console.log("[Driver] Tool Calls:", JSON.stringify(data.toolCalls, null, 2));
 
       if (data.success) {
         setAiResponse(data.text);
 
         // ツール実行結果を確認
         if (data.toolCalls && data.toolCalls.length > 0) {
+          console.log("[Driver] Found", data.toolCalls.length, "tool calls");
           for (const toolCall of data.toolCalls) {
-            if (toolCall.toolName === 'add-location-pin' && toolCall.input.address) {
-              console.log("[Driver] Adding pin for:", toolCall.input.address);
-              // ピン追加処理
-              const address = toolCall.input.address;
-              if (!address.trim()) return;
+            console.log("[Driver] Processing tool call:", {
+              toolName: toolCall.toolName,
+              input: toolCall.input,
+              output: toolCall.output
+            });
 
-              setIsGeocodingLoading(true);
-              setGeocodingError(null);
-
-              if (isLoaded) {
-                const geocoder = new google.maps.Geocoder();
-
-                try {
-                  const result = await geocoder.geocode({
-                    address: address,
-                    region: "jp",
-                  });
-
-                  if (result.results.length === 0) {
-                    setGeocodingError("場所が見つかりませんでした");
-                    return;
-                  }
-
-                  const location = result.results[0].geometry.location;
-                  const newPin = {
-                    id: Date.now().toString(),
-                    location: {
-                      lat: location.lat(),
-                      lng: location.lng(),
-                    },
-                    label: address,
-                  };
-
-                  setCustomPins([newPin]);
-                  setCustomPinDirections(null);
-                  setPinLocationInput("");
-                  setIsPinDialogOpen(false);
-                } catch (err) {
-                  setGeocodingError("場所の検索に失敗しました");
-                } finally {
-                  setIsGeocodingLoading(false);
+            if (toolCall.toolName === 'addLocationPinTool') {
+              console.log("[Driver] Matched add-location-pin tool");
+              if (toolCall.input && toolCall.input.address) {
+                console.log("[Driver] Adding pin for:", toolCall.input.address);
+                // ピン追加処理
+                const address = toolCall.input.address;
+                if (!address.trim()) {
+                  console.log("[Driver] Empty address, skipping");
+                  continue;
                 }
+
+                setIsGeocodingLoading(true);
+                setGeocodingError(null);
+
+                if (isLoaded) {
+                  const geocoder = new google.maps.Geocoder();
+
+                  try {
+                    const result = await geocoder.geocode({
+                      address: address,
+                      region: "jp",
+                    });
+
+                    if (result.results.length === 0) {
+                      setGeocodingError("場所が見つかりませんでした");
+                      console.log("[Driver] No geocoding results for:", address);
+                      continue;
+                    }
+
+                    const location = result.results[0].geometry.location;
+                    const newPin = {
+                      id: Date.now().toString(),
+                      location: {
+                        lat: location.lat(),
+                        lng: location.lng(),
+                      },
+                      label: address,
+                    };
+
+                    console.log("[Driver] Pin added successfully:", newPin);
+                    setCustomPins([newPin]);
+                    setCustomPinDirections(null);
+                    setPinLocationInput("");
+                    setIsPinDialogOpen(false);
+                  } catch (err) {
+                    console.error("[Driver] Geocoding error:", err);
+                    setGeocodingError("場所の検索に失敗しました");
+                  } finally {
+                    setIsGeocodingLoading(false);
+                  }
+                } else {
+                  console.log("[Driver] Google Maps not loaded yet");
+                }
+              } else {
+                console.log("[Driver] No address in tool input");
               }
+            } else {
+              console.log("[Driver] Tool name does not match, got:", toolCall.toolName);
             }
           }
+        } else {
+          console.log("[Driver] No tool calls found");
         }
       }
     } catch (error) {
       console.error('[Driver] Error calling AI:', error);
     }
   }, [isLoaded]);
+
+  // テスト用テキスト送信ハンドラー
+  const handleTestSubmit = useCallback(async () => {
+    if (!testInput.trim() || isTestProcessing) return;
+
+    setIsTestProcessing(true);
+    await handleTranscript(testInput);
+    setTestInput("");
+    setIsTestProcessing(false);
+  }, [testInput, isTestProcessing, handleTranscript]);
 
   // remoteStreamから音声を自動的に文字起こし(activeSessionがある時のみ)
   const {
@@ -598,6 +637,37 @@ export function DriverMap() {
           </div>
         )}
 
+        {/* テスト用入力欄 */}
+        <div className="pointer-events-auto fixed left-4 top-4 z-[10000] w-80">
+          <Card className="bg-background/95 shadow-xl backdrop-blur">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">AI テスト (Function Calling)</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <Input
+                placeholder='例: "札幌駅にピンを立てて"'
+                value={testInput}
+                onChange={(e) => setTestInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleTestSubmit();
+                  }
+                }}
+                disabled={isTestProcessing}
+              />
+              <Button
+                onClick={handleTestSubmit}
+                disabled={!testInput.trim() || isTestProcessing}
+                className="w-full"
+                size="sm"
+              >
+                {isTestProcessing ? '処理中...' : 'AIに送信'}
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+
         {/* 文字起こし結果表示 (activeSessionがある場合のみ) */}
         {activeSession && (transcript || aiResponse || isProcessing) && (
           <div className="pointer-events-auto fixed bottom-24 left-4 right-4 z-[10000] mx-auto max-w-md">
@@ -627,6 +697,20 @@ export function DriverMap() {
                     エラー: {transcriptionError}
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* AI応答表示（テスト入力用、常に表示） */}
+        {aiResponse && !activeSession && (
+          <div className="pointer-events-auto fixed bottom-4 left-4 right-4 z-[10000] mx-auto max-w-md">
+            <Card className="bg-background/95 shadow-xl backdrop-blur">
+              <CardContent className="space-y-2 p-4">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">AIアシスタント:</p>
+                  <p className="text-sm">{aiResponse}</p>
+                </div>
               </CardContent>
             </Card>
           </div>
