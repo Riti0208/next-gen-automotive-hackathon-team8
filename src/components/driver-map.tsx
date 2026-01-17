@@ -36,6 +36,12 @@ const HAKODATE_IC_LOCATION = {
   lng: 140.7375,
 };
 
+// ジャガイモファクトリーの座標 (デモ用固定マーカー)
+const POTATO_FACTORY_LOCATION = {
+  lat: 41.79396824829904,
+  lng: 140.75084615466088,
+};
+
 const NAVIGATION_ZOOM_LEVEL = 18;
 
 interface Location {
@@ -471,6 +477,15 @@ export function DriverMap() {
   const jumpToHakodate = useCallback(() => {
     setCurrentLocation(HAKODATE_IC_LOCATION);
     setHasSkipped(true);
+
+    // デモ用: ジャガイモファクトリーのピンを自動配置
+    const newPin: CustomPin = {
+      id: 'potato-factory-demo',
+      location: POTATO_FACTORY_LOCATION,
+      label: 'ジャガイモファクトリー'
+    };
+    setCustomPins([newPin]);
+
     if (map) {
       map.panTo(HAKODATE_IC_LOCATION);
       map.setZoom(15);
