@@ -37,6 +37,7 @@ const HAKODATE_IC_LOCATION = {
 };
 
 // ジャガイモファクトリーの座標 (デモ用固定マーカー)
+const RECOMMENDED_PLACE = 'じゃがいもファクトリー';
 const POTATO_FACTORY_LOCATION = {
   lat: 41.79396824829904,
   lng: 140.75084615466088,
@@ -762,9 +763,17 @@ export function DriverMap() {
                 <X className="h-6 w-6" />
               </Button>
             ) : (
-              <Button size="lg" onClick={searchRouteToCustomPin} disabled={isLoadingCustomPinRoute} className="h-14 w-14 rounded-full bg-pink-500 p-0 shadow-xl">
-                <Navigation className="h-6 w-6" />
-              </Button>
+              <div className="relative flex flex-col items-center">
+                {/* 吹き出し */}
+                <div className="absolute -top-16 right-0 animate-pulse whitespace-nowrap rounded-lg bg-pink-500 px-3 py-2 text-sm font-bold text-white shadow-lg">
+                  {RECOMMENDED_PLACE}がオススメされました
+                  {/* 吹き出しの三角形 */}
+                  <div className="absolute -bottom-2 right-6 h-0 w-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-pink-500" />
+                </div>
+                <Button size="lg" onClick={searchRouteToCustomPin} disabled={isLoadingCustomPinRoute} className="h-14 w-14 rounded-full bg-pink-500 p-0 shadow-xl">
+                  <Navigation className="h-6 w-6" />
+                </Button>
+              </div>
             )
           )}
         </div>
