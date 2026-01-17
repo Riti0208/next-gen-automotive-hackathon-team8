@@ -98,6 +98,7 @@ export function DriverMap() {
 
   // remoteStreamから音声文字起こし機能(自動)
   const [aiResponse, setAiResponse] = useState<string>("");
+  const [isFunctionCalling, setIsFunctionCalling] = useState<boolean>(false);
 
   // テスト用テキスト入力
   const [testInput, setTestInput] = useState<string>("");
@@ -107,6 +108,7 @@ export function DriverMap() {
     console.log("[Driver] Received transcript from Supporter:", transcriptText);
 
     // Mastraエージェントに送信
+    setIsFunctionCalling(true);
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -197,6 +199,8 @@ export function DriverMap() {
       }
     } catch (error) {
       console.error('[Driver] Error calling AI:', error);
+    } finally {
+      setIsFunctionCalling(false);
     }
   }, [isLoaded]);
 
@@ -669,7 +673,7 @@ export function DriverMap() {
         </div> */}
 
         {/* 文字起こし結果表示 (activeSessionがある場合のみ) */}
-        {activeSession && (transcript || aiResponse || isProcessing) && (
+        {activeSession && (transcript || aiResponse || isFunctionCalling) && (
           <div className="pointer-events-auto fixed bottom-24 left-4 right-4 z-[10000] mx-auto max-w-md">
             <Card className="bg-background/95 shadow-xl backdrop-blur">
               <CardContent className="space-y-2 p-4">
@@ -681,7 +685,7 @@ export function DriverMap() {
                     <p className="text-sm">{transcript}</p>
                   </div>
                 )}
-                {isProcessing && (
+                {isFunctionCalling && (
                   <div className="text-xs text-muted-foreground">
                     処理中...
                   </div>
