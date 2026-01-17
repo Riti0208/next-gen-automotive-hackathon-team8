@@ -84,39 +84,6 @@ export function DriverMap() {
     videoEnabled: true, // ドライバーはビデオ送信
   });
 
-  // 現在地を取得（初回のみ）
-  useEffect(() => {
-    if (!navigator.geolocation) {
-      setError("このブラウザでは位置情報がサポートされていません");
-      setIsLoadingLocation(false);
-      return;
-    }
-
-    console.log("[Geolocation] Requesting current position...");
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const location = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-        };
-        console.log("[Geolocation] Current position obtained:", location);
-        setCurrentLocation(location);
-        setIsLoadingLocation(false);
-      },
-      (err) => {
-        console.error("[Geolocation] Failed to get position:", err);
-        setCurrentLocation(defaultCenter);
-        setIsLoadingLocation(false);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
-      }
-    );
-  }, []);
-
   const [customPins, setCustomPins] = useState<CustomPin[]>([]);
   const [isPinDialogOpen, setIsPinDialogOpen] = useState(false);
   const [pinLocationInput, setPinLocationInput] = useState("");
@@ -223,50 +190,6 @@ export function DriverMap() {
       map.setZoom(NAVIGATION_ZOOM_LEVEL);
     }
   }, [map]);
-
-  // コール開始
-  const startCall = useCallback(async () => {
-    // 固定セッションIDを使用（デモ用）
-    const sessionId = "demo-session-001";
-
-    // Realtime経由で着信リクエストを送信
-    const realtimeService = createRealtimeService();
-    realtimeService.subscribeToSession(sessionId);
-    await realtimeService.subscribe();
-
-    await realtimeService.broadcastCallRequest(
-      "driver_001",
-      "観光太郎",
-      destination || undefined
-    );
-
-    console.log("[Driver] Call request sent");
-
-    setActiveSession({
-      sessionId,
-      supporterId: "supporter_001",
-      driverId: "driver_001", // ドライバーIDを追加
-    });
-
-    // チャンネルをクリーンアップ（WebRTC接続が確立するまで十分な時間を待つ）
-    // ICE候補の交換が完了するまで接続を維持
-  }, [destination]);
-
-  // コール終了
-  const endCall = useCallback(async () => {
-    if (activeSession) {
-      try {
-        await fetch("/api/driver/end-session", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId: activeSession.sessionId }),
-        });
-      } catch (error) {
-        console.error("Failed to end session:", error);
-      }
-    }
-    setActiveSession(null);
-  }, [activeSession]);
 
   // コール開始
   const startCall = useCallback(async () => {
@@ -546,7 +469,7 @@ export function DriverMap() {
         {/* リモートオーディオプレーヤー（音声のみ、非表示） */}
         {remoteStream && (
           <div className="hidden">
-            <VideoPlayer stream={remoteStream} muted={false} />
+            <VideoPlayer stream={remoteStream} muted={false} label={""} />
           </div>
         )}
 
