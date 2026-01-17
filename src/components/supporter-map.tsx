@@ -261,7 +261,7 @@ export function SupporterMap() {
         <GoogleMap
           mapContainerStyle={containerStyle}
           center={activeSession ? HAKODATE_IC_LOCATION : HAKODATE_CENTER}
-          zoom={14}
+          zoom={12}
           onLoad={onLoad}
           onUnmount={onUnmount}
           options={{
