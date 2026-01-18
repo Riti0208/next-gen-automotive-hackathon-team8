@@ -75,6 +75,7 @@ export function DriverMap() {
   const [hasSkipped, setHasSkipped] = useState(false);
   const [hasRecommended, setHasRecommended] = useState(false);
 
+  const [origin, setOrigin] = useState<string>("札幌駅");
   const [destination, setDestination] = useState<string>("");
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
@@ -89,6 +90,7 @@ export function DriverMap() {
   } | null>(null);
 
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+  const originAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
   const watchIdRef = useRef<number | null>(null);
 
   // WebRTC connection
@@ -262,6 +264,31 @@ export function DriverMap() {
     setMap(null);
   }, []);
 
+  const onOriginAutocompleteLoad = useCallback(
+    (autocomplete: google.maps.places.Autocomplete) => {
+      originAutocompleteRef.current = autocomplete;
+    },
+    []
+  );
+
+  const onOriginPlaceChanged = useCallback(() => {
+    if (originAutocompleteRef.current) {
+      const place = originAutocompleteRef.current.getPlace();
+
+      // Safety check: Ensure place and necessary properties exist
+      if (!place || !place.geometry) {
+        console.log("No details available for input: '" + place?.name + "'");
+        return;
+      }
+
+      if (place.formatted_address) {
+        setOrigin(place.formatted_address);
+      } else if (place.name) {
+        setOrigin(place.name);
+      }
+    }
+  }, []);
+
   const onAutocompleteLoad = useCallback(
     (autocomplete: google.maps.places.Autocomplete) => {
       autocompleteRef.current = autocomplete;
@@ -293,6 +320,11 @@ export function DriverMap() {
       return;
     }
 
+    if (!origin) {
+      setError("出発地を設定してください");
+      return;
+    }
+
     setIsLoadingRoute(true);
     setError(null);
 
@@ -300,7 +332,7 @@ export function DriverMap() {
 
     try {
       const result = await directionsService.route({
-        origin: currentLocation,
+        origin: origin,
         destination: destination,
         travelMode: google.maps.TravelMode.DRIVING,
         language: "ja",
@@ -332,7 +364,7 @@ export function DriverMap() {
     } finally {
       setIsLoadingRoute(false);
     }
-  }, [currentLocation, destination]);
+  }, [origin, destination]);
 
   const clearRoute = useCallback(() => {
     setDirections(null);
@@ -578,171 +610,112 @@ export function DriverMap() {
         </GoogleMap>
       </div>
 
-      <div className="pointer-events-none absolute inset-0 z-[1000] flex flex-col p-4">
-        <div className="pointer-events-auto flex w-full flex-col gap-4 lg:w-80">
-          {!directions ? (
-            <Card className="bg-background shadow-lg">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg">経路検索 (テスト用固定位置)</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
+      <div className="pointer-events-none absolute inset-0 z-[1000] flex flex-col">
+        {/* 左上: 距離・時間情報（経路検索後のみ表示） */}
+        {directions && routeInfo && (
+          <div className="pointer-events-auto m-4 w-full max-w-xs">
+            <Card className="bg-background/95 shadow-lg backdrop-blur">
+              <CardContent className="flex items-center justify-between p-3">
+                <div className="flex gap-4 text-sm">
+                  <span className="font-medium">{routeInfo.distance}</span>
+                  <span className="text-muted-foreground">{routeInfo.duration}</span>
+                </div>
+                <Button variant="ghost" size="sm" onClick={clearRoute}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* ボトムシート: 経路検索カード（検索前のみ表示） */}
+        {!directions && (
+          <div className="pointer-events-auto mt-auto w-full">
+            <Card className="bg-background shadow-2xl rounded-t-3xl rounded-b-none border-t">
+              <CardContent className="space-y-3 p-6 pb-8">
                 <div>
-                  <label className="mb-1 block text-sm text-muted-foreground">出発地点 (固定)</label>
-                  <div className="flex h-9 items-center rounded-md border bg-muted/50 px-3 text-sm">
-                    札幌駅
-                  </div>
+                  <label className="mb-1 block text-xs text-muted-foreground">出発地</label>
+                  <Autocomplete
+                    onLoad={onOriginAutocompleteLoad}
+                    onPlaceChanged={onOriginPlaceChanged}
+                    options={{
+                      componentRestrictions: { country: "jp" },
+                      fields: ["formatted_address", "geometry", "name"]
+                    }}
+                  >
+                    <Input
+                      placeholder="出発地を入力..."
+                      value={origin}
+                      onChange={(e) => setOrigin(e.target.value)}
+                      className="h-11 text-base"
+                    />
+                  </Autocomplete>
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-sm text-muted-foreground">目的地</label>
+                  <label className="mb-1 block text-xs text-muted-foreground">目的地</label>
                   <Autocomplete
                     onLoad={onAutocompleteLoad}
                     onPlaceChanged={onPlaceChanged}
                     options={{
                       componentRestrictions: { country: "jp" },
-                      fields: ["formatted_address", "geometry", "name"] // Only get what you use
+                      fields: ["formatted_address", "geometry", "name"]
                     }}
                   >
                     <Input
                       placeholder="目的地を入力..."
                       value={destination}
                       onChange={(e) => setDestination(e.target.value)}
+                      className="h-11 text-base"
                     />
                   </Autocomplete>
                 </div>
 
                 {error && <p className="text-sm text-destructive">{error}</p>}
 
-                <Button onClick={searchRoute} disabled={!destination || isLoadingRoute} className="w-full">
+                <Button onClick={searchRoute} disabled={!destination || !origin || isLoadingRoute} className="w-full h-12 bg-green-600 hover:bg-green-700 text-white text-base font-semibold">
                   {isLoadingRoute ? "検索中..." : "経路検索"}
                 </Button>
               </CardContent>
             </Card>
+          </div>
+        )}
+      </div>
+
+      {/* コールボタン（経路検索後のみ表示） */}
+      {directions && (
+        <div className="pointer-events-auto fixed bottom-8 left-1/2 z-[10000] -translate-x-1/2">
+          {activeSession ? (
+            <Button
+              size="lg"
+              onClick={endCall}
+              className="h-16 gap-3 rounded-full bg-red-500 px-10 text-xl font-bold text-white shadow-2xl hover:bg-red-600"
+            >
+              <PhoneOff className="h-7 w-7" />
+              通話終了
+            </Button>
           ) : (
-            <Card className="bg-background/95 shadow-lg backdrop-blur">
-              <CardContent className="flex items-center justify-between p-3">
-                <div className="flex gap-4 text-sm">
-                  <span className="font-medium">{routeInfo?.distance}</span>
-                  <span className="text-muted-foreground">{routeInfo?.duration}</span>
-                </div>
-                <Button variant="ghost" size="sm" onClick={clearRoute}>終了</Button>
-              </CardContent>
-            </Card>
+            <Button
+              size="lg"
+              onClick={startCall}
+              className="h-16 gap-3 rounded-full bg-green-500 px-10 text-xl font-bold text-white shadow-2xl hover:bg-green-600"
+            >
+              <Phone className="h-7 w-7" />
+              コールする
+            </Button>
           )}
         </div>
+      )}
 
-        {directions && (
-          <div className="pointer-events-auto fixed bottom-8 left-1/2 z-[10000] -translate-x-1/2">
-            {activeSession ? (
-              <Button
-                size="lg"
-                onClick={endCall}
-                className="h-16 gap-3 rounded-full bg-red-500 px-10 text-xl font-bold text-white shadow-2xl hover:bg-red-600"
-              >
-                <PhoneOff className="h-7 w-7" />
-                通話終了
-              </Button>
-            ) : (
-              <Button
-                size="lg"
-                onClick={startCall}
-                className="h-16 gap-3 rounded-full bg-green-500 px-10 text-xl font-bold text-white shadow-2xl hover:bg-green-600"
-              >
-                <Phone className="h-7 w-7" />
-                コールする
-              </Button>
-            )}
-          </div>
-        )}
+      {/* リモートオーディオプレーヤー（音声のみ、非表示） */}
+      {remoteStream && (
+        <div className="hidden">
+          <VideoPlayer stream={remoteStream} muted={false} label={""} />
+        </div>
+      )}
 
-        {/* リモートオーディオプレーヤー（音声のみ、非表示） */}
-        {remoteStream && (
-          <div className="hidden">
-            <VideoPlayer stream={remoteStream} muted={false} label={""} />
-          </div>
-        )}
-
-        {/* テスト用入力欄 */}
-        {/* <div className="pointer-events-auto fixed left-4 top-4 z-[10000] w-80">
-          <Card className="bg-background/95 shadow-xl backdrop-blur">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm">AI テスト (Function Calling)</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Input
-                placeholder='例: "札幌駅にピンを立てて"'
-                value={testInput}
-                onChange={(e) => setTestInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleTestSubmit();
-                  }
-                }}
-                disabled={isTestProcessing}
-              />
-              <Button
-                onClick={handleTestSubmit}
-                disabled={!testInput.trim() || isTestProcessing}
-                className="w-full"
-                size="sm"
-              >
-                {isTestProcessing ? '処理中...' : 'AIに送信'}
-              </Button>
-            </CardContent>
-          </Card>
-        </div> */}
-
-        {/* 文字起こし結果表示 (activeSessionがある場合のみ) */}
-        {activeSession && (transcript || aiResponse || isFunctionCalling) && (
-          <div className="pointer-events-auto fixed bottom-24 left-4 right-4 z-[10000] mx-auto max-w-md">
-            <Card className="bg-background/95 shadow-xl backdrop-blur">
-              <CardContent className="space-y-2 p-4">
-                {transcript && (
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium text-muted-foreground">
-                      Supporterの指示:
-                    </p>
-                    <p className="text-sm">{transcript}</p>
-                  </div>
-                )}
-                {isFunctionCalling && (
-                  <div className="text-xs text-muted-foreground">
-                    処理中...
-                  </div>
-                )}
-                {aiResponse && (
-                  <div className="space-y-1 border-t pt-2">
-                    <p className="text-xs font-medium text-muted-foreground">AIアシスタント:</p>
-                    <p className="text-sm">{aiResponse}</p>
-                  </div>
-                )}
-                {transcriptionError && (
-                  <div className="text-xs text-red-500">
-                    エラー: {transcriptionError}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        )}
-
-        {/* AI応答表示（テスト入力用、常に表示） */}
-        {/* {aiResponse && !activeSession && (
-          <div className="pointer-events-auto fixed bottom-4 left-4 right-4 z-[10000] mx-auto max-w-md">
-            <Card className="bg-background/95 shadow-xl backdrop-blur">
-              <CardContent className="space-y-2 p-4">
-                <div className="space-y-1">
-                  <p className="text-xs font-medium text-muted-foreground">AIアシスタント:</p>
-                  <p className="text-sm">{aiResponse}</p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        )} */}
-
-        {/* 右下のボタン群 */}
-        <div className="pointer-events-auto fixed bottom-8 right-4 z-[10000] flex flex-col gap-3">
+      {/* 右下のボタン群 */}
+      <div className="pointer-events-auto fixed bottom-8 right-4 z-[10000] flex flex-col gap-3">
           {/* テスト用スキップボタン: 経路検索後かつ未スキップ時に表示 */}
           {directions && !hasSkipped && (
             <Button size="lg" onClick={jumpToHakodate} className="h-14 w-14 rounded-full bg-amber-500 p-0 shadow-xl">
@@ -776,7 +749,6 @@ export function DriverMap() {
               </div>
             )
           )}
-        </div>
       </div>
 
       {isPinDialogOpen && (
