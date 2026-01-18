@@ -692,7 +692,7 @@ export function DriverMap() {
               className="h-16 gap-3 rounded-full bg-red-500 px-10 text-xl font-bold text-white shadow-2xl hover:bg-red-600"
             >
               <PhoneOff className="h-7 w-7" />
-              通話終了
+              通話中...
             </Button>
           ) : (
             <Button
